@@ -15,6 +15,7 @@ require_relative "file_dialog"
 require_relative "error_dialog"
 require_relative "recent_files"
 require_relative "in_app_notifier"
+require_relative "menu_fragment"
 
 module Gaphor
   # The port's application entry point, ported from gaphor/application.py +
@@ -35,20 +36,22 @@ module Gaphor
   class Application
     include Gaphor::Action
 
-    # Upstream's `action(name="app.about")` on HelpService#about.
-    action("app.about")
-    def action_about = about_dialog.present(window)
+    # Labels below are declared here, not in `populate_app_menu`, so
+    # `menu_fragment` (upstream's `MenuFragment`, gaphor/ui/menufragment.py)
+    # can build the "Preferences / Keyboard Shortcuts / Help / About" menu
+    # section straight from these action declarations instead of a second,
+    # hand-written copy of the same four strings.
 
     # Upstream's `action(name="app.preferences", shortcut="<Primary>comma")`.
-    action("app.preferences", shortcut: "<Primary>comma")
+    action("app.preferences", label: "_Preferences", shortcut: "<Primary>comma")
     def action_preferences = preferences_dialog.present(window)
 
     # Upstream's `action(name="app.shortcuts", shortcut="<Primary>question")`.
-    action("app.shortcuts", shortcut: "<Primary>question")
+    action("app.shortcuts", label: "_Keyboard Shortcuts", shortcut: "<Primary>question")
     def action_shortcuts = shortcuts_dialog.present(window)
 
     # Upstream's `action(name="app.documentation", shortcut="F1")`.
-    action("app.documentation", shortcut: "F1")
+    action("app.documentation", label: "_Help", shortcut: "F1")
     def action_documentation
       Gio::AppInfo.launch_default_for_uri("https://docs.gaphor.org", nil)
     rescue StandardError => e
@@ -59,6 +62,10 @@ module Gaphor
       # crash the whole process rather than merely failing to open a link.
       warn "Could not open documentation: #{e.message}"
     end
+
+    # Upstream's `action(name="app.about")` on HelpService#about.
+    action("app.about", label: "_About Gaphor")
+    def action_about = about_dialog.present(window)
 
     action("app.quit", shortcut: ["<Primary>q"])
     def action_quit = app.quit
@@ -177,15 +184,19 @@ module Gaphor
       if recent_section
         menu.append_section(nil, recent_section)
       end
-      menu.append_section(
-        nil,
-        Gio::Menu.new.tap do |section|
-          section.append("_Preferences", "app.preferences")
-          section.append("_Keyboard Shortcuts", "app.shortcuts")
-          section.append("_Help", "app.documentation")
-          section.append("_About Gaphor", "app.about")
-        end,
-      )
+      menu.append_section(nil, menu_fragment.menu)
+    end
+
+    # Built once (memoized) and never rebuilt: `refresh_app_menu` re-runs
+    # `populate_app_menu` every time a file is picked, and `MenuFragment`
+    # has no way to remove a section it already appended (see its own
+    # `remove_actions` comment) — calling `add_actions` again here would
+    # pile up a duplicate "Preferences / Keyboard Shortcuts / Help / About"
+    # section on every pick. The four actions it draws from never change,
+    # so building the fragment exactly once is correct, not just
+    # convenient.
+    def menu_fragment
+      @menu_fragment ||= Gaphor::MenuFragment.new.tap { |fragment| fragment.add_actions(self, scope: "app") }
     end
 
     def file_section
