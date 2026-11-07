@@ -246,13 +246,39 @@ GtkDriver.drive(Gaphor::Application.new, shots: SHOTS) do |d, app|
     end
   end
 
+  d.step("the error dialog shows for a failed file open (error state)") do
+    before = app.debug_info.create_debug_info
+    Gaphor::ErrorDialog.show(
+      "Could not open the file",
+      "drive-induced open failure",
+      parent: app.window,
+      exception: StandardError.new("drive-induced open failure"),
+    )
+    d.check("the window's visible dialog is an Adwaita::AlertDialog") do
+      app.window.visible_dialog.is_a?(Adwaita::AlertDialog)
+    end
+    d.check("recording the matching exception separately still shows up in debug info") do
+      app.debug_info.record_exception(StandardError.new("drive-induced open failure"))
+      app.debug_info.create_debug_info.include?("drive-induced open failure") && app.debug_info.create_debug_info != before
+    end
+  end
+
+  d.step("the error dialog has had a tick to render") do
+    d.shot("05-error-dialog")
+    app.window.visible_dialog.close
+  end
+
+  d.step("no dialog is left open after the error dialog closes") do
+    d.check("visible_dialog is nil again") { app.window.visible_dialog.nil? }
+  end
+
   d.step("app.file-open constructs and shows the native file picker") do
     before_toplevels = Gtk::Window.list_toplevels.length
     app.app.activate_action("file-open", nil)
     d.check("activating it does not raise and opens the native dialog") do
       Gtk::Window.list_toplevels.length > before_toplevels
     end
-    d.shot("05-open-file-dialog")
+    d.shot("06-open-file-dialog")
     # The headless session has no way to click through the native dialog
     # (it is not driven to completion here), so it is left for the process
     # exit — a few steps down, at app.quit — to tear down along with the
