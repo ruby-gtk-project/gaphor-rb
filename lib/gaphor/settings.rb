@@ -60,8 +60,17 @@ module Gaphor
       self["style-variant"] = value
     end
     def use_english? = self["use-english"] == true
+    def use_english=(value)
+      self["use-english"] = value
+    end
     def reset_tool_after_create? = self["reset-tool-after-create"] == true
+    def reset_tool_after_create=(value)
+      self["reset-tool-after-create"] = value
+    end
     def remove_unused_elements? = self["remove-unused-elements"] == true
+    def remove_unused_elements=(value)
+      self["remove-unused-elements"] = value
+    end
 
     # Binds a boolean/string setting to a widget property, mirroring
     # upstream's Settings._bind_propery (GLib two-way bind). GLib's real

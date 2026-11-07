@@ -47,7 +47,12 @@ module Gaphor
     action("app.documentation", shortcut: "F1")
     def action_documentation
       Gio::AppInfo.launch_default_for_uri("https://docs.gaphor.org", nil)
-    rescue GLib::Error => e
+    rescue StandardError => e
+      # No handler is registered for https: in a bare/headless session
+      # (xvfb-run has none), and ruby-gnome surfaces that as Gio::IOError,
+      # not GLib::Error — an uncaught exception here would otherwise escape
+      # across the Gio::SimpleAction "activate" signal's C boundary and
+      # crash the whole process rather than merely failing to open a link.
       warn "Could not open documentation: #{e.message}"
     end
 

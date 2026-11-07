@@ -46,6 +46,11 @@ module Gaphor
           end
 
           style_variant_row.signal_connect("notify::selected-item") { on_style_variant_selected }
+          # Upstream's preferences() calls settings.bind_use_english(use_english, "active")
+          # before connecting its own notify handler — the connect alone (as this
+          # port had it) only ever popped the restart toast and never wrote the
+          # switch's state back to settings.
+          settings.bind_use_english(use_english_row, "active")
           use_english_row.signal_connect("notify::active") { on_use_english_selected }
           reset_tool_after_create_row.signal_connect("notify::active") { settings.reset_tool_after_create = reset_tool_after_create_row.active? }
           remove_unused_elements_row.signal_connect("notify::active") { settings.remove_unused_elements = remove_unused_elements_row.active? }
