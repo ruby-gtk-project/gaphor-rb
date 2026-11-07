@@ -36,6 +36,29 @@ require_relative "gtk_driver"
 SHOTS = File.expand_path("../tmp/shots", __dir__)
 FileUtils.rm_rf(SHOTS)
 
+# GTK's recent-files list is shared, on-disk, system-wide state — not
+# sandboxed by this drive's scratch XDG_CONFIG_HOME. A prior run that
+# crashed before its own cleanup ran (or another app on the machine using
+# this application id) can leave entries behind, which would make the menu
+# shape checks below flaky. Start from a known-empty state instead of
+# assuming one.
+def clear_gaphor_recent_files!
+  manager = Gtk::RecentManager.default
+  manager.items.select { |item| item.has_application?(Gaphor::RecentFiles::APPLICATION_ID) }.each do |item|
+    begin
+      manager.remove_item(item.uri)
+    rescue Gtk::RecentManagerError::NotFound
+      nil
+    end
+  end
+  # `remove_item` queues a save rather than writing synchronously; give the
+  # default main context a few turns to flush it before relying on the
+  # list being empty.
+  10.times { GLib::MainContext.default.iteration(false) }
+end
+
+clear_gaphor_recent_files!
+
 # Runs `uri` through Gio's default-handler launch without actually shelling
 # out to a browser, so action_documentation can be exercised headlessly.
 # Gio::AppInfo.launch_default_for_uri raises/warns when no handler is
@@ -61,15 +84,17 @@ GtkDriver.drive(Gaphor::Application.new, shots: SHOTS) do |d, app|
       end
       app.header_bar.respond_to?(:first_child) ? true : found
     end
-    d.check("the app menu has four entries across one section") do
+    d.check("the app menu has a File section and a help/about section") do
       model = app.app_menu
-      model.is_a?(Gio::Menu) && model.n_items == 1
+      # No recent files have been picked yet in this run, so the "Open
+      # Recent" section (only appended when non-empty) is absent.
+      model.is_a?(Gio::Menu) && model.n_items == 2
     end
     d.shot("01-main-window")
   end
 
   d.step("the app actions are registered on the Gtk::Application") do
-    %w[about preferences shortcuts documentation quit].each do |name|
+    %w[about preferences shortcuts documentation quit file-open file-open-recent].each do |name|
       d.check("app.#{name} is registered") { app.app.has_action?(name) }
     end
   end
@@ -195,6 +220,44 @@ GtkDriver.drive(Gaphor::Application.new, shots: SHOTS) do |d, app|
     on_disk = JSON.parse(File.read(path))
     d.check("the written style-variant matches") { on_disk["style-variant"] == app.settings.style_variant }
     d.check("the written use-english matches") { on_disk["use-english"] == app.settings.use_english? }
+  end
+
+  d.step("picking a file records it as recent and toasts a confirmation") do
+    path = File.join(CONFIG_HOME, "drive-probe.gaphor")
+    FileUtils.touch(path)
+    toast = app.on_file_picked(path)
+    d.check("on_file_picked raises a toast") { toast.is_a?(Adwaita::Toast) }
+    d.check("the file is now in RecentFiles#items") { app.recent_files.items.any? { |item| item.uri.end_with?("drive-probe.gaphor") } }
+    d.check("the app menu grew an Open Recent section") { app.app_menu.n_items == 3 }
+    d.check("re-picking the same path through app.file-open-recent does not raise") do
+      app.app.activate_action("file-open-recent", GLib::Variant.new(path))
+      true
+    end
+    # GTK's recent-files list is shared system-wide state, not sandboxed by
+    # this drive's scratch XDG_CONFIG_HOME, so the probe is removed again
+    # rather than left behind for every other app on the machine.
+    clear_gaphor_recent_files!
+  end
+
+  d.step("the file dialog's own open/save helpers build without raising") do
+    d.check("GAPHOR_FILTER names .gaphor files") { Gaphor::FileDialog::GAPHOR_FILTER.first[1] == "*.gaphor" }
+    d.check("pretty_path shortens the home directory") do
+      Gaphor::FileDialog.pretty_path(File.join(Dir.home, "x.gaphor")) == "~/x.gaphor"
+    end
+  end
+
+  d.step("app.file-open constructs and shows the native file picker") do
+    before_toplevels = Gtk::Window.list_toplevels.length
+    app.app.activate_action("file-open", nil)
+    d.check("activating it does not raise and opens the native dialog") do
+      Gtk::Window.list_toplevels.length > before_toplevels
+    end
+    d.shot("05-open-file-dialog")
+    # The headless session has no way to click through the native dialog
+    # (it is not driven to completion here), so it is left for the process
+    # exit — a few steps down, at app.quit — to tear down along with the
+    # rest of the toplevels, rather than risking a close-while-iterating
+    # race with GTK's own dialog teardown.
   end
 
   d.step("app.quit really quits the application") do

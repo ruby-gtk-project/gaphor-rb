@@ -11,6 +11,10 @@ require_relative "debug_info"
 require_relative "about_dialog"
 require_relative "preferences_dialog"
 require_relative "shortcuts_dialog"
+require_relative "file_dialog"
+require_relative "error_dialog"
+require_relative "recent_files"
+require_relative "in_app_notifier"
 
 module Gaphor
   # The port's application entry point, ported from gaphor/application.py +
@@ -59,14 +63,57 @@ module Gaphor
     action("app.quit", shortcut: ["<Primary>q"])
     def action_quit = app.quit
 
+    # Upstream's `AppFileManager#action_open` (gaphor/ui/appfilemanager.py),
+    # minus the "already open in another session" check and the model
+    # load itself — the sessions and the modeling core it loads into have
+    # not been ported yet. What *is* ported end to end: the standard file
+    # picker, filtered to `*.gaphor`, feeding GTK's shared recent-files list
+    # and an in-app toast confirming the pick.
+    action("app.file-open", shortcut: "<Primary>o")
+    def action_file_open
+      Gaphor::FileDialog.open_file(
+        "Open a Model",
+        parent: window,
+        filters: Gaphor::FileDialog::GAPHOR_FILTER,
+      ) do |path|
+        if path
+          on_file_picked(path)
+        end
+      end
+    rescue StandardError => e
+      debug_info.record_exception(e)
+      Gaphor::ErrorDialog.show("Could not open the file", e.message, parent: window, exception: e)
+    end
+
+    # Re-selecting a path from the "Open Recent" menu (see
+    # `recent_files_section`): re-adding it moves it back to the top of the
+    # list, matching upstream's "re-add, to ensure it's at the top".
+    def action_file_open_recent(path)
+      on_file_picked(path)
+    end
+
+    # What the (still-missing) modeling core would otherwise do with a
+    # picked path: record it in GTK's shared recent-files list and confirm
+    # the pick with a toast.
+    def on_file_picked(path)
+      recent_files.add(path)
+      refresh_app_menu
+      notifier.notify("Selected #{Gaphor::FileDialog.pretty_path(path)}")
+    end
+
     def build
       app.tap do
         app.signal_connect("activate") do
           @styling = Styling.new
           Gaphor::ActionGroup.apply_application_actions(app, self)
+          app.add_action(file_open_recent_action)
 
           window.tap do |win|
-            win.content = toolbar_view
+            win.content = toast_overlay
+          end
+
+          toast_overlay.tap do |overlay|
+            overlay.child = toolbar_view
           end
 
           toolbar_view.tap do |view|
@@ -110,20 +157,88 @@ module Gaphor
       end
     end
 
-    # The same actions upstream's greeter.ui hamburger-menu exposes.
+    # The same actions upstream's greeter.ui hamburger-menu exposes, plus
+    # the "Open…" / "Open Recent" entries upstream's appfilemanager and
+    # recentfiles services back.
     def app_menu
-      @app_menu ||= Gio::Menu.new.tap do |menu|
-        menu.append_section(
-          nil,
-          Gio::Menu.new.tap do |section|
-            section.append("_Preferences", "app.preferences")
-            section.append("_Keyboard Shortcuts", "app.shortcuts")
-            section.append("_Help", "app.documentation")
-            section.append("_About Gaphor", "app.about")
-          end,
-        )
+      @app_menu ||= Gio::Menu.new.tap { |menu| populate_app_menu(menu) }
+    end
+
+    # Rebuilds the menu's sections in place, so the "Open Recent" list
+    # reflects the latest pick without the menu button needing a new model.
+    def refresh_app_menu
+      app_menu.remove_all
+      populate_app_menu(app_menu)
+    end
+
+    def populate_app_menu(menu)
+      menu.append_section(nil, file_section)
+      recent_section = recent_files_section
+      if recent_section
+        menu.append_section(nil, recent_section)
+      end
+      menu.append_section(
+        nil,
+        Gio::Menu.new.tap do |section|
+          section.append("_Preferences", "app.preferences")
+          section.append("_Keyboard Shortcuts", "app.shortcuts")
+          section.append("_Help", "app.documentation")
+          section.append("_About Gaphor", "app.about")
+        end,
+      )
+    end
+
+    def file_section
+      Gio::Menu.new.tap do |section|
+        section.append("_Open…", "app.file-open")
       end
     end
+
+    # Upstream's `RecentFiles` has no menu of its own — plugins such as the
+    # (still-unported) greeter build one from it. This is that menu, one
+    # section per refresh, capped at the ten most recent picks.
+    def recent_files_section
+      items = recent_files.items.first(10)
+
+      if items.empty?
+        nil
+      else
+        Gio::Menu.new.tap do |section|
+          items.each do |item|
+            file = Gio::File.new_for_uri(item.uri)
+            path = file.path
+            if path
+              section.append_item(recent_file_menu_item(path))
+            end
+          end
+        end
+      end
+    end
+
+    def recent_file_menu_item(path)
+      Gio::MenuItem.new(Gaphor::FileDialog.pretty_path(path), nil).tap do |menu_item|
+        menu_item.set_action_and_target_value("app.file-open-recent", GLib::Variant.new(path))
+      end
+    end
+
+    def file_open_recent_action
+      @file_open_recent_action ||= Gio::SimpleAction.new("file-open-recent", GLib::VariantType.new("s")).tap do |a|
+        a.signal_connect("activate") do |_action, parameter|
+          # Letting a Ruby exception escape this block would cross the
+          # "activate" signal's C boundary and crash the whole process (see
+          # `action_documentation`'s rescue, for the same reason).
+          begin
+            action_file_open_recent(parameter.respond_to?(:value) ? parameter.value : parameter)
+          rescue StandardError => e
+            debug_info.record_exception(e)
+          end
+        end
+      end
+    end
+
+    def toast_overlay = @toast_overlay ||= Adwaita::ToastOverlay.new
+    def notifier = @notifier ||= Gaphor::InAppNotifier.new(toast_overlay)
+    def recent_files = @recent_files ||= Gaphor::RecentFiles.new
 
     def status_page
       @status_page ||= Adwaita::StatusPage.new.tap do |page|
