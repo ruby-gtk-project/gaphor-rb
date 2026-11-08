@@ -62,10 +62,17 @@ module Gaphor
         initial = entry.state
       end
       variant_type = GLib::VariantType.new(initial == true || initial == false ? GVARIANT_BOOL : GVARIANT_STRING)
-      Gio::SimpleAction.new_stateful(entry.name, variant_type, to_variant(initial)).tap do |gio_action|
+      Gio::SimpleAction.new(entry.name, variant_type, to_variant(initial)).tap do |gio_action|
         gio_action.signal_connect("change-state") do |action, value|
-          provider.send(entry.method_name, from_variant(value))
-          action.set_state(value)
+          unwrapped = from_variant(value)
+          provider.send(entry.method_name, unwrapped)
+          # Passing the signal's own `value` argument straight back into
+          # `set_state` segfaults the gio2 binding (it is a borrowed
+          # reference the "change-state" marshaller owns, not one
+          # `set_state` can take over) — a fresh Variant built from the
+          # already-unwrapped value is what upstream's own re-affirmation
+          # of the new state amounts to anyway.
+          action.set_state(to_variant(unwrapped))
         end
       end
     end
