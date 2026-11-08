@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| Upstream | `main` @ `b7a3a5f76` |
-| Port | `ruby` @ `e53009023` |
+| Upstream | `main` @ `b7a3a5f76` (unchanged since prior round) |
+| Port | `ruby` @ `69034776` |
 | Upstream msgids (`po/gaphor.pot`) | 750 |
 | Upstream locales shipped | 25 (`be ca cs de es fi fr gl hi hr hu it ja ko nl pl pt_BR ru sl sv ta tr uk vi zh_Hans`) + `.pot` |
 | Port msgids | 0 |
@@ -23,7 +23,12 @@ across `lib/`, `exe/gaphor` → **zero matches of any kind**. There is no
 `.pot` file, nothing that could be extracted into a catalogue. Confirmed by
 direct read of every file in `lib/gaphor/`: `about_dialog.rb`,
 `action.rb`, `action_group.rb`, `application.rb`, `debug_info.rb`,
-`preferences_dialog.rb`, `settings.rb`, `shortcuts_dialog.rb`, `styling.rb`.
+`preferences_dialog.rb`, `settings.rb`, `shortcuts_dialog.rb`, `styling.rb`,
+and, re-checked this round for the seven files added since the prior audit,
+`error_dialog.rb`, `file_dialog.rb`, `in_app_notifier.rb`, `menu_fragment.rb`,
+`recent_files.rb`, `status_window.rb`, `text_field.rb` — all seven are
+equally clean of any gettext marker, so the zero-infrastructure finding has
+not narrowed at all despite the port tripling in file count.
 
 ## What that means concretely, for the one unit the port built
 
@@ -40,6 +45,12 @@ literal:
   `"Errors:"`, `"Time since application startup: …"` — upstream's
   `gaphor/ui/help/debuginfo.py` runs these through gettext; the port's do not
   go through anything.
+- This round's additions carry the same pattern: `lib/gaphor/error_dialog.rb`'s
+  `"Close"` and `"Start Debug Session"` response labels, `lib/gaphor/
+  file_dialog.rb`'s `"Gaphor Models"` and `"All Files"` filter names — all
+  bare literals, none marked, matching `gaphor/ui/errordialog.py` and
+  `gaphor/ui/filedialog.py`'s equivalent strings which upstream does run
+  through gettext.
 - `lib/gaphor/about_dialog.rb`, `preferences_dialog.rb`, `shortcuts_dialog.rb`:
   not individually re-enumerated here, but the same pattern holds throughout
   — confirmed by the absence of any marker function in the grep above, which

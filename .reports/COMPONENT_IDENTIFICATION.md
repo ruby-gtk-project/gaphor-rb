@@ -11,6 +11,21 @@ document adds the totals check, closes one gap in that file's own text (see
 below), and gives the full accounting the parity and accountability reports
 depend on.
 
+**Update, this round (port `69034776`, up from `e5300902`; upstream unchanged
+at `b7a3a5f76`).** Seven new `lib/gaphor/*.rb` files were added:
+`error_dialog.rb`, `file_dialog.rb`, `in_app_notifier.rb`, `menu_fragment.rb`,
+`recent_files.rb`, `status_window.rb`, `text_field.rb`. Each identifies
+against a real upstream file (`gaphor/ui/errordialog.py`, `filedialog.py`,
+`notification.py` (partial), `menufragment.py`, `recentfiles.py`,
+`statuswindow.py`, `textfield.py` respectively) — these are genuine new
+units, not relabeled old ones. Five of the seven are wired into
+`application.rb` and reachable from `exe/gaphor`; two — `status_window.rb`
+and `text_field.rb` — are not required by anything outside their own file and
+are not reachable from `exe/gaphor` at all (see `COMPONENT_PARITY.md`'s
+"Orphan components" section for the full trace). Identification records both
+facts: the class exists and matches its upstream counterpart's shape, and it
+is unreachable in the running app.
+
 ## Totals, re-verified
 
 | | Upstream (`origin/main`) | `ruby` branch |
@@ -18,7 +33,7 @@ depend on.
 | Tracked files under `gaphor/` | 1073 | — |
 | `.py` source files | 604 | — |
 | `.ui` files | 26 (one `.gir`-adjacent count differs by 1 from the prior report's 27; re-grepped as `find . -name '*.ui'` = 26) | 0 |
-| `lib/*.rb` files | — | 11 (`gaphor.rb`, `gaphor/action.rb`, `action_group.rb`, `application.rb`, `about_dialog.rb`, `preferences_dialog.rb`, `shortcuts_dialog.rb`, `settings.rb`, `styling.rb`, `debug_info.rb`, `rb/version.rb`) |
+| `lib/*.rb` files | — | 18 (`gaphor.rb`, `gaphor/action.rb`, `action_group.rb`, `application.rb`, `about_dialog.rb`, `preferences_dialog.rb`, `shortcuts_dialog.rb`, `settings.rb`, `styling.rb`, `debug_info.rb`, `rb/version.rb`, plus this round's `error_dialog.rb`, `file_dialog.rb`, `in_app_notifier.rb`, `menu_fragment.rb`, `recent_files.rb`, `status_window.rb`, `text_field.rb` — of which the last two are unreachable, see update note above) |
 | `po/` catalogue | 25 locale `.po` + `gaphor.pot` (750 `msgid`s) | none |
 | Toolbox tool definitions (`ToolDef`) | 144 across 16 files, 29 `DiagramType` | 0 |
 | Property pages registered (`@PropertyPages.register`) | 41 sites over 13 files | 0 |
@@ -26,17 +41,30 @@ depend on.
 
 ## What exists in the port, identified unit by unit
 
-Only one upstream unit has a port counterpart at all: the **application shell**
-(`gaphor/application.py` + `gaphor/ui/__init__.py` + `gaphor/main.py` +
-`gaphor/ui/help/__init__.py` + `gaphor/ui/help/about.ui` +
+Still effectively one upstream unit has a working port counterpart: the
+**application shell** (`gaphor/application.py` + `gaphor/ui/__init__.py` +
+`gaphor/main.py` + `gaphor/ui/help/__init__.py` + `gaphor/ui/help/about.ui` +
 `gaphor/ui/help/preferences.ui` + `gaphor/ui/help/shortcuts.ui` +
 `gaphor/ui/help/debuginfo.py` + `gaphor/services/properties.py` +
-`gaphor/ui/styling.py`), mapped to `lib/gaphor/application.rb` plus its eight
-sibling files. The prior inventory's tables for this unit are accurate; see
-`.reports/component-inventory.md` for the per-widget breakdown (`Adw.Application`,
-`Adw.ApplicationWindow`, `Adw.ToolbarView`, `Adw.HeaderBar`, the hamburger
-`Gtk.MenuButton`/`Gio::Menu`, `Adwaita::AboutDialog`, the preferences and
-shortcuts dialogs, `Adwaita::StatusPage`).
+`gaphor/ui/styling.py` + this round's `errordialog.py`, `filedialog.py`,
+`recentfiles.py`, `menufragment.py`, and part of `notification.py`), mapped
+to `lib/gaphor/application.rb` plus its now-fifteen sibling files. The prior
+inventory's tables for this unit are accurate; see
+`.reports/component-inventory.md` for the per-widget breakdown
+(`Adw.Application`, `Adw.ApplicationWindow`, `Adw.ToolbarView`,
+`Adw.HeaderBar`, the hamburger `Gtk.MenuButton`/`Gio::Menu`,
+`Adwaita::AboutDialog`, the preferences and shortcuts dialogs,
+`Adwaita::StatusPage`, and now the native file picker, error alert dialog,
+recent-files menu section and in-app toast).
+
+Two more files identify against real upstream units but are not reachable
+from the running app at all — `lib/gaphor/text_field.rb`
+(`gaphor/ui/textfield.py`) and `lib/gaphor/status_window.rb`
+(`gaphor/ui/statuswindow.py`). Both classes exist, both load, neither is
+`require_relative`d or instantiated anywhere outside their own file. They are
+identified here as their own units, each scored a gap, because a class that
+cannot be reached is not the unit it claims to be a working copy of — see
+`COMPONENT_PARITY.md`.
 
 **Everything else upstream builds has no port file at all** — not a thin stub,
 not a placeholder, nothing:

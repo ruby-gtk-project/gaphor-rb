@@ -2,13 +2,48 @@
 
 | | |
 |---|---|
-| Upstream | `main` @ `b7a3a5f76` |
-| Port | `ruby` @ `e53009023` |
+| Upstream | `main` @ `b7a3a5f76` (unchanged since prior round) |
+| Port | `ruby` @ `69034776` |
 | Upstream tests (censused) | 1427 rows, 231 test files, 604 `.py` files total |
-| Ported | 0 |
+| Ported | 0 (spec/ has zero `*_spec.rb` files — see below) |
 | Gaps | 1427 |
-| Extra (port-only) | 43 named checks / 57 census rows, `test/drive_gaphor.rb` |
+| Extra (port-only) | 55 named checks / `test/drive_gaphor.rb` (up from 43/43 last round) |
 | Test command | `nix develop --command xvfb-run -a ruby test/drive_gaphor.rb` |
+
+**Update, this round.** Re-ran the drive: `55 of 55 checks passed`, `DRIVE
+OK`. The 12 new checks cover the file-dialog/error-dialog/recent-files/
+in-app-notifier paths added this round. **`spec/` still contains no test
+file at all** — `find spec -type f` returns only `spec/README.md` and
+`spec/spec_helper.rb`. The devshell banner advertises a working `rspec`
+command (`ruby -e 'require "rspec/core"; ...'`); running it against an empty
+`spec/` is not a test suite, it is a harness with nothing loaded into it.
+This was true last round too and remains true now — it is listed again here
+rather than silently dropped, per this skill's own rule against treating a
+repeated gap as closed because an earlier report already named it.
+
+**Worse than last round's finding: the devshell's own advertised spec
+command errors out.** Running the exact command the `nix develop` banner
+prints —
+`ruby -e 'require "rspec/core"; exit RSpec::Core::Runner.run(["--format",
+"progress", "--require", "spec_helper", "spec"])'` — fails before collecting
+any examples:
+
+```
+LoadError: cannot load such file -- kettle/test/rspec
+# ./spec/spec_helper.rb:23:in '<top (required)>'
+...
+0 examples, 0 failures, 2 errors occurred outside of examples
+```
+
+`spec/spec_helper.rb:23` requires `kettle/test/rspec`, a gem that is not in
+the devshell's bundle. This is not "no tests exist," it is "the one command
+meant to run them cannot even load." Not a single prior report in this
+repository's `.reports/` flagged this — they correctly flagged the empty
+`spec/` directory but none of them actually ran the banner's own command to
+check it still works. That is itself a test-parity-report gap: "is every
+upstream test ported, and does the suite actually run?" was answered "no
+tests, so N/A" rather than "no tests, and the harness that would run them is
+currently broken besides."
 
 ## Census method
 
@@ -39,50 +74,50 @@ it hits), and are not referenced from any ledger that maps them back. By
 files backing the one unit the port built — before counting the other 1410
 rows for units that do not exist in the port at all.
 
-## Census-vs-runtime discrepancy (its own finding)
+## Census-vs-runtime discrepancy (its own finding, carried forward)
 
-`scripts/test-census.sh` against the port's `test/` found **57** distinct
-`check(...)`/`step(...)` call sites in `test/drive_gaphor.rb`. The actual
-run of that file reports:
-
-```
-43 of 43 checks passed
-DRIVE OK
-```
-
-57 ≠ 43. Some fraction of the census's matches are `d.step(...)` calls (group
-headers, 17 of them) being counted alongside the `d.check(...)` assertions
-(43 of them) that increment the pass counter — i.e. the file mixes two call
-sites the way the skill's "decide which call is the assertion unit" warning
-describes, and the raw census over-counts by exactly the step count (57 − 43
-= 14, not 17, so there is a further small discrepancy worth a follow-up read
-rather than a guess). This is flagged rather than silently reconciled: the
-runtime number (43/43) is the one used for the gate above and throughout this
-report, and the raw census number is not used as "the port's test count"
-anywhere in this ledger for that reason.
+Last round's census found a mismatch between `test-census.sh`'s raw call-site
+count and the drive's own pass counter (57 census rows vs. 43 passing
+checks). That same shape of discrepancy is worth re-checking every round
+rather than assumed stable, since this round's number moved: the runtime
+number is now **55 of 55 checks passed, DRIVE OK**, re-run directly in this
+audit. That number — not any census total — is the one used for the gate
+above and throughout this report.
 
 ## Does the suite actually run?
 
-Yes — this is the one clean fact in this report. `nix develop --command
-xvfb-run -a ruby test/drive_gaphor.rb` was executed in this audit (not just
-read) and produced `DRIVE OK`, 43/43. The harness is real, not aspirational,
-and it genuinely drives widgets (opens each dialog, flips settings, asserts
-on-disk persistence, clicks through the menu) rather than merely instantiating
-classes.
+Partially. `nix develop --command xvfb-run -a ruby test/drive_gaphor.rb` was
+executed in this audit (not just read) and produced `DRIVE OK`, 55/55. The
+harness is real, not aspirational, and it genuinely drives widgets (opens
+each dialog, flips settings, asserts on-disk persistence, clicks through the
+menu, picks a file, triggers the error dialog) rather than merely
+instantiating classes. **But two of the files committed in the same change
+that raised this count — `text_field.rb` and `status_window.rb` — are not
+driven by it at all**, and are not reachable from `exe/gaphor` either (see
+`COMPONENT_PARITY.md`'s "Orphan components"). Upstream's own test for the
+equivalent, `gaphor/ui/tests/test_statuswindow.py::test_status_window`, is
+three lines — `StatusWindow("title", "message")` then assert
+`progress_bar`/`window` — and the port has nothing of even that size pointed
+at `Gaphor::StatusWindow`. And the devshell's advertised rspec command cannot
+even load (`kettle/test/rspec` missing), so there is no second suite quietly
+covering them either.
 
-But it drives **one unit**. `test/drive_gaphor.rb:18` says so itself: "the
-component this port actually claims to have — the application shell." That is
-an honest scope statement in a test file, not a parity claim, and it should
-not be read as one — but the runtime gate's "11 components, 43/43" has no
-reach into the other ~1410 upstream test rows, because those rows test code
-that was never written. **A component no check exercises is unverified, not
-done**, per this audit's own framing, and that is true here for everything
-outside the application shell: the whole modeling core, every diagram
-operation, every property page, every toolbox tool, the greeter, the main
-window, the model browser, model persistence/storage, undo/redo, the
-model-merge/diff logic, and all four modeling-language plugins (UML, SysML,
-RAAML, C4Model) have zero executed checks, zero ported tests, and zero port
-code for the checks to run against.
+The drive otherwise still covers **one unit**. `test/drive_gaphor.rb:18` says
+so itself: "the component this port actually claims to have — the
+application shell." That is an honest scope statement in a test file, not a
+parity claim, and it should not be read as one — but the runtime gate's "11
+components, 55/55" has no reach into the other ~1410 upstream test rows,
+because those rows test code that was never written, and (per the finding
+above) no reach into two files that *were* written. **A component no check
+exercises is unverified, not done**, per this audit's own framing, and that
+is true here for everything outside the application shell: the whole
+modeling core, every diagram operation, every property page, every toolbox
+tool, the greeter, the main window, the model browser, model
+persistence/storage, undo/redo, the model-merge/diff logic, and all four
+modeling-language plugins (UML, SysML, RAAML, C4Model) have zero executed
+checks, zero ported tests, and zero port code for the checks to run against
+— and it is now also true, inside the one unit that is driven, for
+`TextField` and `StatusWindow`.
 
 ## Upstream test counts for a few of the biggest untouched areas
 
@@ -112,7 +147,7 @@ because there is no port file on the other side of the join to map them to.)
 - Every one of the 1427 upstream rows is, as of this audit, either a named
   gap in substance (above) or an uncensused member of a unit with no port
   file; none is marked done.
-- The port's 43 driven checks are listed under `## Extra` territory per the
+- The port's 55 driven checks are listed under `## Extra` territory per the
   skill's own template and are **not** counted toward the 1427.
 
 ## Verdict
@@ -120,4 +155,9 @@ because there is no port file on the other side of the join to map them to.)
 **0/1427. 1427 gaps.** The port's suite is real, runs, and passes — and
 inherits none of upstream's test knowledge. This is the exact shape the skill
 warns about: a green, substantial, *executed* suite that proves the one thing
-it was written to prove and nothing upstream actually pinned.
+it was written to prove and nothing upstream actually pinned. This round adds
+two sharper instances of the same warning: two newly-committed files
+(`TextField`, `StatusWindow`) that the green suite does not touch at all, and
+a second, independently-advertised test command (the devshell's rspec
+one-liner) that does not even load. Neither prior report caught the rspec
+breakage because neither actually ran it; this one did.
